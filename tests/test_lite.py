@@ -1,3 +1,4 @@
+import os
 from datetime import date
 from pathlib import Path
 from threading import Thread
@@ -7,6 +8,7 @@ from urllib.request import urlopen
 
 import pytest
 from opportunity_lite import dashboard
+from opportunity_lite.cli import _load_env
 from opportunity_lite.leads.sending import SendRequest, StoredDraft, prepare_email
 from opportunity_lite.models import Listing
 from opportunity_lite.sources import conferences, greenhouse
@@ -138,3 +140,19 @@ def test_dashboard_sends_only_after_click_and_blocks_repeat(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_env_file_fills_unset_values_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = tmp_path / ".env"
+    env.write_text(
+        '# comment\nOPENAI_API_KEY="from-file"\n'
+        "GMAIL_ADDRESS=file@example.org\nGMAIL_APP_PASSWORD=\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("GMAIL_ADDRESS", "shell@example.org")
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
+    _load_env(env)
+    assert os.environ["OPENAI_API_KEY"] == "from-file"
+    assert os.environ["GMAIL_ADDRESS"] == "shell@example.org"
+    assert "GMAIL_APP_PASSWORD" not in os.environ

@@ -41,7 +41,17 @@ def _display(items: list[Listing]) -> None:
         print(f"     {item.location} | {item.url}")
 
 
+def _load_env(path: Path) -> None:
+    """Fill unset variables from a local .env file; values already in the shell win."""
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, sep, value = line.partition("=")
+            if sep and value.strip() and not name.lstrip().startswith("#"):
+                os.environ.setdefault(name.strip(), value.strip().strip("\"'"))
+
+
 def main() -> None:
+    _load_env(Path(".env"))
     args = _parser().parse_args()
     config = _config(args.config)
     if args.command == "search":
