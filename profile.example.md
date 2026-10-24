@@ -1,4 +1,5 @@
 # My background
 
-Replace this file with truthful experience, skills, interests, and preferred locations.
-The draft generator uses only facts you put here and facts in the public listing.
+Optional if you add resume.pdf. Use this file for anything your resume doesn't say:
+what roles you want, preferred locations, when you're available, and projects you're proud of.
+The draft generator uses only facts in this file, your resume, and the public listing.

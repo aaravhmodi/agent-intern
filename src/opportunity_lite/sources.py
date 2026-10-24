@@ -1,19 +1,33 @@
-"""Read public Greenhouse boards and the confs.tech open data repository."""
+"""Read community GitHub internship lists, company job boards, and confs.tech."""
 
 import html
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 from html.parser import HTMLParser
 from typing import Any
 from urllib.request import Request, urlopen
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
-from opportunity_lite.models import Conference, GreenhouseResponse, Listing
+from opportunity_lite.models import (
+    AshbyResponse,
+    Conference,
+    Config,
+    GitHubPosting,
+    GreenhouseResponse,
+    LeverPosting,
+    Listing,
+)
 
 _CONFERENCES = TypeAdapter(list[Conference])
 _SLUG = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+# Community-maintained internship lists that publish .github/scripts/listings.json.
+GITHUB_LISTS = (
+    "SimplifyJobs/Summer2027-Internships",
+    "vanshb03/Summer2027-Internships",
+)
 
 
 class _Text(HTMLParser):
@@ -45,14 +59,89 @@ def greenhouse(board: str, payload: Any) -> list[Listing]:
         Listing(
             kind="job",
             title=job.title,
-            organization=board,
+            organization=job.company_name or board,
             url=job.absolute_url,
             source=f"Greenhouse: {board}",
             location=job.location.name,
             description=plain_text(job.content)[:4000],
+            posted_on=job.first_published.date() if job.first_published else None,
         )
         for job in jobs
     ]
+
+
+_LEVER = TypeAdapter(list[LeverPosting])
+
+
+def lever(company: str, payload: Any) -> list[Listing]:
+    return [
+        Listing(
+            kind="job",
+            title=post.text,
+            organization=company,
+            url=post.hostedUrl,
+            source=f"Lever: {company}",
+            location=post.categories.location,
+            description=post.descriptionPlain[:4000],
+            posted_on=date.fromtimestamp(post.createdAt / 1000) if post.createdAt else None,
+        )
+        for post in _LEVER.validate_python(payload)
+    ]
+
+
+def ashby(company: str, payload: Any) -> list[Listing]:
+    return [
+        Listing(
+            kind="job",
+            title=job.title,
+            organization=company,
+            url=job.jobUrl,
+            source=f"Ashby: {company}",
+            location=job.location,
+            description=job.descriptionPlain[:4000],
+            posted_on=job.publishedAt.date() if job.publishedAt else None,
+        )
+        for job in AshbyResponse.model_validate(payload).jobs
+        if job.isListed
+    ]
+
+
+BOARDS = {
+    "Greenhouse": ("https://boards-api.greenhouse.io/v1/boards/{}/jobs?content=true", greenhouse),
+    "Lever": ("https://api.lever.co/v0/postings/{}?mode=json", lever),
+    "Ashby": ("https://api.ashbyhq.com/posting-api/job-board/{}", ashby),
+}
+
+
+def github_list(repo: str, payload: Any, today: date, max_age_days: int) -> list[Listing]:
+    if not isinstance(payload, list):
+        raise ValueError(f"{repo} listings.json is not a list")
+    oldest = today - timedelta(days=max_age_days)
+    listings: list[Listing] = []
+    for row in payload:
+        try:
+            post = GitHubPosting.model_validate(row)
+            if not (post.active and post.is_visible):
+                continue
+            posted = date.fromtimestamp(post.date_posted)
+            if posted < oldest:
+                continue
+            details = [t for t in (*post.terms, post.season, post.category) if t and t != "N/A"]
+            listings.append(
+                Listing(
+                    kind="job",
+                    title=post.title,
+                    organization=post.company_name,
+                    url=post.url,
+                    source=f"GitHub: {repo}",
+                    location="; ".join(post.locations),
+                    description=" · ".join(details),
+                    posted_on=posted,
+                )
+            )
+        except ValidationError:
+            continue  # one malformed community row shouldn't drop the whole list
+    return listings
 
 
 def conferences(topic: str, payload: Any, today: date) -> list[Listing]:
@@ -75,19 +164,31 @@ def conferences(topic: str, payload: Any, today: date) -> list[Listing]:
     ]
 
 
-def collect(boards: list[str], topics: list[str], today: date) -> tuple[list[Listing], list[str]]:
+def collect(config: Config, today: date) -> tuple[list[Listing], list[str]]:
     found: dict[str, Listing] = {}
     errors: list[str] = []
-    for board in boards:
+    for repo in GITHUB_LISTS:
         try:
-            if not _SLUG.fullmatch(board):
-                raise ValueError("invalid board token")
-            url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true"
-            items = greenhouse(board, fetch_json(url))
+            url = f"https://raw.githubusercontent.com/{repo}/dev/.github/scripts/listings.json"
+            items = github_list(repo, fetch_json(url), today, config.max_age_days)
             found.update((item.key, item) for item in items)
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            errors.append(f"Greenhouse {board}: {type(exc).__name__}")
-    for topic in topics:
+        except (OSError, ValueError) as exc:
+            errors.append(f"GitHub {repo}: {type(exc).__name__}")
+    for name, tokens in (
+        ("Greenhouse", config.greenhouse_boards),
+        ("Lever", config.lever_boards),
+        ("Ashby", config.ashby_boards),
+    ):
+        template, parse = BOARDS[name]
+        for token in tokens:
+            try:
+                if not _SLUG.fullmatch(token):
+                    raise ValueError("invalid board token")
+                items = parse(token, fetch_json(template.format(token)))
+                found.update((item.key, item) for item in items)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                errors.append(f"{name} {token}: {type(exc).__name__}")
+    for topic in config.conference_topics:
         try:
             if not _SLUG.fullmatch(topic):
                 raise ValueError("invalid topic")

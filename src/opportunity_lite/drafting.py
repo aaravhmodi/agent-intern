@@ -7,16 +7,17 @@ from opportunity_lite.models import Draft, Listing
 
 def draft_message(client: OpenAI, model: str, profile: str, listing: Listing) -> Draft:
     if not profile.strip():
-        raise ValueError("Write your factual background in profile.md before drafting.")
+        raise ValueError("Add resume.pdf or write your background in profile.md before drafting.")
     response = client.responses.parse(
         model=model,
         instructions=(
             "Write a concise, personal message about this public listing. Use only facts in the "
-            "candidate profile and listing. Do not invent skills, relationships, applications, "
-            "attendance, or eligibility. For a job, ask about the role; for a conference, ask "
-            "about attending or contributing. Address a team when no person is named. "
-            "Return an email subject, email body, and shorter copyable message. "
-            "These are drafts for human review, never sent by this program."
+            "candidate profile, resume, and listing. Do not invent skills, relationships, "
+            "applications, attendance, or eligibility. For a job, ask about the role; for a "
+            "conference, ask about attending or contributing. Address a team when no person is "
+            "named. Return an email subject, email body, and shorter copyable message. "
+            "These are drafts the candidate reviews before choosing to send. If the profile "
+            "includes a resume, it is attached when they send, so you may mention it."
         ),
         input=(
             f"Candidate profile:\n{profile[:12000]}\n\n"

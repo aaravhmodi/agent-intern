@@ -1,6 +1,9 @@
 {
   "greenhouse_boards": [],
+  "lever_boards": [],
+  "ashby_boards": [],
   "conference_topics": ["general", "python", "javascript"],
-  "keywords": [],
+  "keywords": ["intern", "co-op"],
+  "max_age_days": 30,
   "model": "gpt-4o-mini"
 }

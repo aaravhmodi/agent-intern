@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Local job and opportunity discovery with reviewed message drafts"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["openai>=2,<3", "pydantic>=2.11,<3"]
+dependencies = ["openai>=2,<3", "pydantic>=2.11,<3", "pypdf>=5,<7"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]

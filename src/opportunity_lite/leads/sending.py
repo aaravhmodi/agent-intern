@@ -1,7 +1,9 @@
 """Pure checks for one reviewed, explicitly requested email send."""
 
+import mimetypes
 import re
 from email.message import EmailMessage
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
@@ -10,8 +12,17 @@ from opportunity_lite.models import Draft
 _EMAIL = re.compile(r"^[^\s@<>]+@[^\s@<>]+\.[A-Za-z]{2,}$")
 
 
+def is_email(value: str) -> bool:
+    return bool(_EMAIL.fullmatch(value))
+
+
 class StoredDraft(Draft):
     listing_url: HttpUrl
+    listing_title: str = ""
+    organization: str = ""
+    recipient: str = ""
+    recipient_source: HttpUrl | None = None
+    recipient_verified: bool = False
 
 
 class SendRequest(BaseModel):
@@ -35,6 +46,7 @@ def prepare_email(
     draft: StoredDraft,
     sender: str,
     already_sent: bool,
+    resume: Path | None = None,
 ) -> EmailMessage:
     if not request.confirmed:
         raise ValueError("Confirm that you checked the recipient address.")
@@ -47,4 +59,10 @@ def prepare_email(
     message["To"] = request.recipient
     message["Subject"] = draft.subject
     message.set_content(draft.email)
+    if resume is not None:
+        kind = mimetypes.guess_type(resume.name)[0] or "application/octet-stream"
+        maintype, subtype = kind.split("/", 1)
+        message.add_attachment(
+            resume.read_bytes(), maintype=maintype, subtype=subtype, filename=resume.name
+        )
     return message

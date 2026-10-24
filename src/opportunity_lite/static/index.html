@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intern Agent</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<div class="app">
+  <nav id="nav" aria-label="Views"></nav>
+  <div class="list">
+    <div class="list-head">
+      <div class="header-top"><span class="eyebrow">Intern Agent / Your search</span><span class="edition eyebrow" id="updated"></span></div>
+      <div class="view-heading"><h1 id="view-title">All listings</h1><span class="count" id="view-count"></span></div>
+      <p class="view-description" id="view-description"></p>
+      <div class="toolbar" id="toolbar">
+        <div class="toolbar-filters">
+          <select class="search" id="region" aria-label="Location">
+            <option value="">Anywhere</option><option value="canada">Canada</option>
+            <option value="usa">USA</option><option value="remote">Remote</option>
+          </select>
+          <input class="search" id="q" type="search" placeholder="Search listings" aria-label="Search listings">
+        </div>
+        <button class="btn primary" id="find"></button>
+      </div>
+    </div>
+    <div class="table-head" id="table-head"><span>Posted</span><span>Opportunity</span><span>Contact</span><span>Status</span></div>
+    <div class="rows" id="rows"></div>
+  </div>
+  <aside id="aside"><div id="detail"></div></aside>
+</div>
+<div id="toast"></div>
+<script>
+const DONE = new Set(["applied", "emailed", "skipped"]);
+const BOARD = /^(Greenhouse|Lever|Ashby):/;
+const VIEWS = {
+  all:         { title: "All listings", group: "Find", label: "All listings", test: l => l.kind === "job" && !DONE.has(l.status), find: "refresh" },
+  lists:       { title: "Internship lists", group: "Find", label: "Internship lists", test: l => l.source.startsWith("GitHub:") && !DONE.has(l.status), find: "refresh" },
+  boards:      { title: "Company boards", group: "Find", label: "Company boards", test: l => BOARD.test(l.source) && !DONE.has(l.status), find: "refresh" },
+  web:         { title: "From the web", group: "Find", label: "From the web", test: l => l.source === "Web search" && !DONE.has(l.status), find: "web" },
+  conferences: { title: "Conferences", group: "Events", label: "Conferences", test: l => l.kind === "conference" && l.status !== "skipped", find: "refresh" },
+  drafted:     { title: "Drafted", group: "Track", label: "Drafted", test: l => l.status === "drafted" },
+  emailed:     { title: "Emailed", group: "Track", label: "Emailed", test: l => l.status === "emailed" },
+  applied:     { title: "Applied", group: "Track", label: "Applied", test: l => l.status === "applied" },
+  skipped:     { title: "Skipped", group: "Track", label: "Skipped", test: l => l.status === "skipped" },
+  setup:       { title: "Setup", group: "You", label: "Resume & settings", setup: true, test: () => false },
+};
+const DESCRIPTION = {
+  all: "Open roles from community internship lists, the company boards you follow, and your web searches.",
+  lists: "Internships from the SimplifyJobs and vanshb03 lists on GitHub, across thousands of companies.",
+  boards: "Roles straight from the Greenhouse, Lever and Ashby boards you follow in Setup.",
+  web: "Postings found on the open web. Describe what you want and search.",
+  conferences: "Developer conferences and calls for speakers from confs.tech.",
+  drafted: "Listings with a draft ready to review.",
+  emailed: "Emails you've sent, kept in one record.",
+  applied: "Roles you've applied to.",
+  skipped: "Listings set aside for now.",
+  setup: "Your resume, background, what to search for, and the accounts the app uses.",
+};
+const FIND_LABEL = { refresh: "Refresh sources", web: "Search the web" };
+const ROW_CAP = 300;
+let state = { listings: [], view: "all", q: "", region: "", selected: null, armed: null, data: null };
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const when = iso => new Date(iso).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
+const $ = id => document.getElementById(id);
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 4500); }
+async function api(path, body, type) {
+  const opts = body === undefined ? {} : { method: "POST", headers: {"Content-Type": type || "application/json"}, body: type ? body : JSON.stringify(body) };
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  return res.json();
+}
+async function load() {
+  state.data = await api("/api/state");
+  state.listings = state.data.listings;
+  renderNav(); renderRows(); renderDetail();
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+function age(iso) {
+  if (!iso) return "–";
+  const d = Math.round((new Date(today() + "T00:00") - new Date(iso + "T00:00")) / 864e5);
+  return d <= 0 ? "today" : d < 60 ? d + "d" : Math.round(d / 30) + "mo";
+}
+function until(iso) {
+  if (!iso) return "–";
+  const d = Math.round((new Date(iso + "T00:00") - new Date(today() + "T00:00")) / 864e5);
+  return d <= 0 ? "today" : d + "d";
+}
+const CANADA = /canada|\b(ON|BC|QC|AB|MB|SK|NS|NB|NL|PE)\b|toronto|vancouver|montr[eé]al|waterloo|ottawa|calgary|mississauga/i;
+const USA = /\bUSA?\b|united states|\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b|new york|san francisco|seattle|boston/;
+const inRegion = l => !state.region || (state.region === "remote" ? /remote/i : state.region === "canada" ? CANADA : USA).test(l.location);
+const sourceName = s => s.startsWith("GitHub:") ? s.slice(7).trim().split("/")[0] : s.split(":")[0];
+
+function renderNav() {
+  const d = state.data;
+  let html = `<div class="brand"><span class="brand-mark">I.</span><span>Intern Agent<small>Internships & opportunities</small></span></div><div class="nav-sections">`;
+  let group = null;
+  for (const [id, v] of Object.entries(VIEWS)) {
+    if (v.group !== group) { if (group) html += `</div>`; html += `<div class="group"><h3>${v.group}</h3>`; group = v.group; }
+    const n = v.setup ? [d.resume, d.keys.OPENAI_API_KEY, d.sender].filter(Boolean).length + "/3" : state.listings.filter(v.test).length;
+    html += `<button class="nav-item ${state.view === id ? "on" : ""}" data-view="${id}"><span>${v.label}</span><span>${n}</span></button>`;
+  }
+  html += `</div></div><div class="sender">${d.sender ? `Sending as <b>${esc(d.sender)}</b>` : "Email sending is off. Connect Gmail in Setup."}</div>`;
+  $("nav").innerHTML = html;
+}
+function visible() {
+  const v = VIEWS[state.view], q = state.q;
+  return state.listings.filter(l => v.test(l) && inRegion(l)
+    && (!q || `${l.title} ${l.organization} ${l.location} ${l.description}`.toLowerCase().includes(q)));
+}
+function renderRows() {
+  const v = VIEWS[state.view];
+  $("view-title").textContent = v.title;
+  $("view-description").textContent = DESCRIPTION[state.view];
+  $("updated").textContent = state.data.updated ? `Updated ${when(state.data.updated)}` : "Not refreshed yet";
+  $("toolbar").style.display = v.setup ? "none" : "";
+  $("table-head").classList.toggle("hidden", !!v.setup);
+  $("table-head").children[0].textContent = state.view === "conferences" ? "When" : "Posted";
+  $("find").style.display = v.find ? "" : "none";
+  $("find").textContent = FIND_LABEL[v.find] || "";
+  $("q").placeholder = v.find === "web" ? "e.g. backend intern Toronto, winter 2027" : "Search listings";
+  if (v.setup) { $("view-count").textContent = ""; return renderSetup(); }
+  const items = visible();
+  $("view-count").textContent = items.length;
+  const conf = state.view === "conferences";
+  $("rows").innerHTML = items.length ? items.slice(0, ROW_CAP).map(l => {
+    const d = l.draft, fresh = l.posted_on && age(l.posted_on).match(/^(today|[0-3]d)$/);
+    return `<div class="row ${state.selected === l.key ? "on" : ""} ${DONE.has(l.status) ? "done" : ""}" data-key="${esc(l.key)}">
+      <div class="fit ${conf ? "due" : fresh ? "strong" : ""}">${conf ? until(l.event_date) : age(l.posted_on)}</div>
+      <div><div class="co">${esc(l.organization)}</div><div class="sub">${esc(conf ? l.location : l.title)}</div>
+        <div class="sub">${esc([conf ? "" : l.location, sourceName(l.source)].filter(Boolean).join(" · "))}</div></div>
+      <div class="who">${esc(l.sent_to || (d && d.recipient) || (d ? "No address found" : "No contact yet"))}</div>
+      <div class="status ${esc(l.status)}">${esc(l.status)}</div>
+    </div>`;
+  }).join("") + (items.length > ROW_CAP ? `<div class="more-rows">Showing ${ROW_CAP} of ${items.length}. Search or pick a location to narrow it down.</div>` : "")
+    : `<div class="empty">${state.listings.length ? "Nothing here yet." : "No listings yet. Click Refresh sources to pull from the internship lists, your company boards and conferences."}</div>`;
+}
+
+// Setup: the files and keys the app reads, edited in place.
+function renderSetup() {
+  const d = state.data, c = d.config, r = d.resume, k = d.keys;
+  const list = xs => esc(xs.join(", "));
+  const kb = n => n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB";
+  $("rows").innerHTML = `<div class="setup">
+    <div class="card"><h3>Resume</h3>
+      <div class="hint">${r ? `<span class="tag ok" style="margin-left:0">${esc(r.name)}</span> ${kb(r.size)} · ${r.chars ? `${r.chars.toLocaleString()} characters read for drafts` : "no text could be read (is it a scanned image?); it still attaches to emails"}`
+        : "No resume yet. Drafts are written from it, and it's attached to the emails you send."}</div>
+      <div class="file-row"><input type="file" id="resume-file" accept="application/pdf,.pdf" aria-label="Resume PDF"><button class="btn primary" id="resume-up">${r ? "Replace resume" : "Upload resume"}</button></div>
+    </div>
+    <div class="card"><h3>About you</h3>
+      <div class="hint">Anything your resume doesn't say: the roles you want, where, when you're free, projects you're proud of. Drafts use only facts from here, your resume and the listing.</div>
+      <textarea id="profile" maxlength="20000" placeholder="Third-year software engineering student looking for a winter 2027 backend or infrastructure internship in Toronto or remote...">${esc(d.profile)}</textarea>
+      <div class="actions"><button class="btn primary" id="profile-save">Save</button></div>
+    </div>
+    <div class="card"><h3>What to search</h3>
+      <div class="hint">Every refresh reads the SimplifyJobs and vanshb03 internship lists on GitHub, which track openings at thousands of companies on Workday, Greenhouse, Lever, Ashby and their own sites. Add company boards to follow specific employers too. Use From the web for anything else.</div>
+      <div class="grid">
+        <div><label class="field">Keywords (any match keeps a listing)</label><input class="text" id="c-keywords" value="${list(c.keywords)}" placeholder="intern, co-op"></div>
+        <div><label class="field">Only listings posted in the last … days</label><input class="text" id="c-age" type="number" min="1" value="${c.max_age_days}"></div>
+        <div><label class="field">Greenhouse boards</label><input class="text" id="c-greenhouse" value="${list(c.greenhouse_boards)}" placeholder="stripe, figma"></div>
+        <div><label class="field">Lever companies</label><input class="text" id="c-lever" value="${list(c.lever_boards)}" placeholder="kepler"></div>
+        <div><label class="field">Ashby companies</label><input class="text" id="c-ashby" value="${list(c.ashby_boards)}" placeholder="harvey"></div>
+        <div><label class="field">Conference topics</label><input class="text" id="c-topics" value="${list(c.conference_topics)}" placeholder="python, javascript"></div>
+        <div><label class="field">OpenAI model</label><input class="text" id="c-model" value="${esc(c.model)}"></div>
+      </div>
+      <div class="hint">A board's name is the last part of its URL: boards.greenhouse.io/<b>stripe</b>, jobs.lever.co/<b>kepler</b>, jobs.ashbyhq.com/<b>harvey</b>. Conference topics are file names from <a href="https://github.com/tech-conferences/conference-data" target="_blank" rel="noopener">confs.tech</a>.</div>
+      <div class="actions"><button class="btn primary" id="config-save">Save</button></div>
+    </div>
+    <div class="card"><h3>Connections</h3>
+      <div class="hint">Saved to <code>.env</code> in this folder, on this computer only. Leave a field blank to keep what's there.</div>
+      <div class="grid">
+        <div><label class="field">OpenAI API key ${k.OPENAI_API_KEY ? `<span class="tag ok">Saved</span>` : ""}</label><input class="text" id="k-openai" type="password" autocomplete="off" placeholder="${k.OPENAI_API_KEY ? "••••••••" : "sk-..."}"></div>
+        <div><label class="field">Gmail address</label><input class="text" id="k-gmail" type="email" value="${esc(d.gmail_address)}" placeholder="you@gmail.com"></div>
+        <div><label class="field">Gmail app password ${k.GMAIL_APP_PASSWORD ? `<span class="tag ok">Saved</span>` : ""}</label><input class="text" id="k-pass" type="password" autocomplete="off" placeholder="${k.GMAIL_APP_PASSWORD ? "••••••••" : "16 letters from Google"}"></div>
+      </div>
+      <div class="hint">The OpenAI key writes drafts, searches the web and finds contact addresses (<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">create one</a>). Gmail needs an <a href="https://support.google.com/mail/answer/185833" target="_blank" rel="noopener">app password</a>, not your normal password; it's used only when you click Send.</div>
+      <div class="actions"><button class="btn primary" id="keys-save">Save</button></div>
+    </div>
+  </div>`;
+}
+
+function renderDetail() {
+  const l = state.listings.find(x => x.key === state.selected);
+  const aside = $("aside"), detail = $("detail");
+  if (!l || VIEWS[state.view].setup) {
+    aside.classList.remove("open");
+    detail.innerHTML = `<div class="placeholder"><span class="placeholder-index">01 / Detail</span><span class="placeholder-rule"></span><h2>Select a listing.</h2><p>Read the role, write an email from your resume, and send it with your resume attached.</p></div>`;
+    return;
+  }
+  aside.classList.add("open");
+  const d = l.draft, conf = l.kind === "conference";
+  const meta = [conf ? "Conference" : "Job", l.location, `via ${sourceName(l.source)}`, l.posted_on && `Posted ${l.posted_on}`, conf && l.event_date && `Date ${l.event_date}`].filter(Boolean);
+  const verified = d && d.recipient && d.recipient_verified, guessed = d && d.recipient && !d.recipient_verified;
+  const canSend = !!state.data.sender && !!d, armed = state.armed === l.key;
+  const resume = state.data.resume;
+  const emailSection = d ? `
+    <section>
+      <h4>Email</h4>
+      ${l.sent_at ? `<div class="hint"><span class="tag ok" style="margin-left:0">Sent</span> to ${esc(l.sent_to)} on ${esc(when(l.sent_at))}</div>` : ""}
+      <label class="field">To ${verified ? `<span class="tag ok">Published</span>` : guessed ? `<span class="tag">Unverified</span>` : ""}</label>
+      <input class="text" id="f-to" value="${esc(d.recipient || "")}" placeholder="name@company.com">
+      ${d.recipient_source ? `<div class="hint">${verified ? "Found on" : "Suggested from"} <a href="${esc(d.recipient_source)}" target="_blank" rel="noopener">${esc(new URL(d.recipient_source).hostname)}</a>${guessed ? ", but it isn't written on that page" : ""}.</div>`
+        : `<div class="hint">No published address found for this role. Add one you trust.</div>`}
+      ${guessed ? `<label class="check"><input type="checkbox" id="f-verified"> I've checked this address is correct</label>` : ""}
+      <label class="field">Subject</label>
+      <input class="text" id="f-subject" value="${esc(d.subject)}" maxlength="120">
+      <label class="field">Message</label>
+      <textarea id="f-body" maxlength="3000">${esc(d.email)}</textarea>
+      <label class="check"><input type="checkbox" id="f-attach" ${resume ? "checked" : "disabled"}> ${resume ? `Attach resume (${esc(resume.name)})` : "Attach resume (upload one in Setup)"}</label>
+      <div class="actions">
+        <button class="btn ${armed ? "danger" : "primary"}" id="send" ${canSend ? "" : "disabled"}>${armed ? "Click again to send" : l.sent_at ? "Send again" : "Send email"}</button>
+        <button class="btn" data-copy="email">Copy</button>
+      </div>
+      ${state.data.sender ? "" : `<div class="hint">Sending is off until Gmail is connected in Setup.</div>`}
+    </section>
+    <section>
+      <h4>Short message</h4>
+      <textarea class="short" id="f-short">${esc(d.short_message)}</textarea>
+      <div class="actions"><button class="btn" data-copy="short">Copy</button></div>
+      <div class="hint">For a LinkedIn note or a chat message. Paste it and send it yourself.</div>
+    </section>` : `
+    <section><h4>Outreach</h4><div class="hint">${state.data.keys.OPENAI_API_KEY ? `I'll write an email from ${resume ? "your resume" : "your profile"} and this listing, and look for a published hiring address.` : "Add your OpenAI key in Setup to write drafts."}</div>
+      <div class="actions"><button class="btn primary" data-draft="1" ${state.data.keys.OPENAI_API_KEY ? "" : "disabled"}>Write draft</button></div></section>`;
+  detail.innerHTML = `<div class="detail">
+    <div class="detail-top"><span class="eyebrow">${conf ? "Opportunity / Event" : "Opportunity / Detail"}</span><button class="btn close" id="close">Close</button></div>
+    <h2>${esc(l.organization)}</h2>
+    <div class="lede">${esc(l.title)}</div>
+    <div class="meta">${meta.map(m => `<span>${esc(m)}</span>`).join("")}</div>
+    <div class="links"><a href="${esc(l.url)}" target="_blank" rel="noopener">${conf ? "Event page" : "Posting"}</a>${l.source.startsWith("GitHub:") ? `<a href="https://github.com/${esc(l.source.slice(7).trim())}" target="_blank" rel="noopener">Source list</a>` : ""}</div>
+    ${l.description ? `<p style="margin:12px 0 0">${esc(l.description)}</p>` : ""}
+    <div class="actions">
+      <a class="btn primary" href="${esc(l.url)}" target="_blank" rel="noopener">${conf ? "Open" : "Open application"}</a>
+      ${!conf && l.status !== "applied" ? `<button class="btn" data-status="applied">Mark applied</button>` : ""}
+      ${l.status !== "skipped" ? `<button class="btn" data-status="skipped">Skip</button>` : ""}
+      ${l.status === "applied" || l.status === "skipped" ? `<button class="btn" data-status="new">Move back to to-do</button>` : ""}
+    </div>
+    ${emailSection}
+    ${d ? `<div class="actions" style="margin-top:18px"><button class="btn" data-draft="1">Rewrite draft</button></div>` : ""}
+  </div>`;
+}
+
+$("nav").addEventListener("click", e => {
+  const b = e.target.closest("[data-view]"); if (!b) return;
+  state.view = b.dataset.view; state.selected = null; renderNav(); renderRows(); renderDetail();
+});
+$("q").addEventListener("input", e => { state.q = e.target.value.toLowerCase(); renderRows(); });
+$("q").addEventListener("keydown", e => { if (e.key === "Enter" && VIEWS[state.view].find === "web") $("find").click(); });
+$("region").addEventListener("change", e => { state.region = e.target.value; renderRows(); });
+$("rows").addEventListener("click", async e => {
+  const b = e.target.closest("button");
+  if (b && b.id) {
+    const csv = id => $(id).value.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const label = b.textContent;
+    try {
+      b.disabled = true;
+      if (b.id === "resume-up") {
+        const file = $("resume-file").files[0];
+        if (!file) throw new Error("Choose a PDF first.");
+        b.textContent = "Uploading…";
+        await api("/api/resume", file, "application/pdf"); toast("Resume saved.");
+      } else if (b.id === "profile-save") {
+        await api("/api/profile", { text: $("profile").value }); toast("Saved.");
+      } else if (b.id === "config-save") {
+        await api("/api/config", { keywords: csv("c-keywords"), max_age_days: Number($("c-age").value) || 30, greenhouse_boards: csv("c-greenhouse"), lever_boards: csv("c-lever"), ashby_boards: csv("c-ashby"), conference_topics: csv("c-topics"), model: $("c-model").value.trim() || "gpt-4o-mini" });
+        toast("Saved. Refresh sources to use it.");
+      } else if (b.id === "keys-save") {
+        await api("/api/keys", { OPENAI_API_KEY: $("k-openai").value, GMAIL_ADDRESS: $("k-gmail").value, GMAIL_APP_PASSWORD: $("k-pass").value }); toast("Saved to .env.");
+      }
+      await load();
+    } catch (err) { toast(err.message); b.disabled = false; b.textContent = label; }
+    return;
+  }
+  const r = e.target.closest(".row"); if (!r) return;
+  state.selected = r.dataset.key; state.armed = null; renderRows(); renderDetail();
+});
+$("find").addEventListener("click", async e => {
+  const b = e.currentTarget, kind = VIEWS[state.view].find, label = b.textContent;
+  const query = $("q").value.trim();
+  if (kind === "web" && !query) { $("q").focus(); return toast("Describe the roles to search for, then search."); }
+  b.disabled = true;
+  b.textContent = kind === "web" ? "Searching the web… (up to a minute)" : "Reading every source…";
+  try {
+    const r = await api("/api/refresh", kind === "web" ? { web: query } : {});
+    if (kind === "web") { $("q").value = ""; state.q = ""; }
+    toast((r.added ? `Added ${r.added} new. ` : "Nothing new this time. ") + (r.errors.length ? `Couldn't reach: ${r.errors.join(", ")}.` : ""));
+    await load();
+  } catch (err) { toast(err.message); }
+  finally { b.disabled = false; b.textContent = label; }
+});
+$("detail").addEventListener("click", async e => {
+  const l = state.listings.find(x => x.key === state.selected); if (!l) return;
+  const b = e.target.closest("button"); if (!b) return;
+  try {
+    if (b.id === "close") { state.selected = null; renderRows(); renderDetail(); }
+    else if (b.dataset.status) {
+      b.disabled = true;
+      await api("/api/status", { key: l.key, status: b.dataset.status });
+      toast(b.dataset.status === "new" ? "Moved back to to-do." : `Marked ${b.dataset.status}.`); await load();
+    } else if (b.dataset.draft) {
+      b.disabled = true; b.textContent = "Writing, and looking for an address… (up to a minute)";
+      await api("/api/draft", { key: l.key }); toast("Draft ready."); await load();
+    } else if (b.dataset.copy === "email") {
+      await navigator.clipboard.writeText(`Subject: ${$("f-subject").value}\n\n${$("f-body").value}`); toast("Copied.");
+    } else if (b.dataset.copy === "short") {
+      await navigator.clipboard.writeText($("f-short").value); toast("Copied.");
+    } else if (b.id === "send") {
+      if (state.armed !== l.key) {
+        state.armed = l.key; b.textContent = "Click again to send"; b.classList.replace("primary", "danger");
+        setTimeout(() => { if (state.armed === l.key) { state.armed = null; b.textContent = l.sent_at ? "Send again" : "Send email"; b.classList.replace("danger", "primary"); } }, 5000);
+        return;
+      }
+      state.armed = null; b.disabled = true; b.textContent = "Sending…";
+      const verified = $("f-verified");
+      await api("/api/send", {
+        key: l.key, to: $("f-to").value, subject: $("f-subject").value, body: $("f-body").value,
+        attach_resume: $("f-attach").checked, confirm_unverified: verified ? verified.checked : false, resend: !!l.sent_at,
+      });
+      toast(`Sent to ${$("f-to").value}.`); await load();
+    }
+  } catch (err) { toast(err.message); await load().catch(() => {}); }
+});
+
+load().catch(err => $("rows").innerHTML = `<div class="empty">Could not load: ${esc(err.message)}</div>`);
+</script>
+</body>
+</html>
