@@ -2,6 +2,12 @@
 
 A small local tool for finding jobs and opportunities from public sources, then generating messages to review. Gmail sending is optional and happens only when you click **Send one email** on the local draft page. The tool does not submit applications or send emails automatically.
 
+[![Intern Agent walkthrough: setup, search, draft, and review](docs/media/demo.gif)](docs/media/walkthrough.mp4)
+
+[Watch the full video](docs/media/walkthrough.mp4) · [Follow the walkthrough](docs/WALKTHROUGH.md)
+
+Recorded on a Linux server with fictional listings and fixture AI output. The CLI and dashboard are real; no email is sent in the demo.
+
 ## Setup
 
 Requires Python 3.12 or newer. On Windows PowerShell:

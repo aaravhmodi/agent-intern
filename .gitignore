@@ -3,6 +3,9 @@ __pycache__/
 .pytest_cache/
 .pytest_tmp/
 .release/
+.demo-*
+docs/media/raw/
+docs/media/*.webm
 .env
 config.json
 profile.md
