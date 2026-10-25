@@ -8,3 +8,5 @@ config.json
 profile.md
 data/
 /resume.*
+docs/media/raw/
+docs/media/*.webm

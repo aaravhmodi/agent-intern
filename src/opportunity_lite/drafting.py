@@ -20,8 +20,7 @@ def draft_message(client: OpenAI, model: str, profile: str, listing: Listing) ->
             "includes a resume, it is attached when they send, so you may mention it."
         ),
         input=(
-            f"Candidate profile:\n{profile[:12000]}\n\n"
-            f"Public listing:\n{listing.model_dump_json()}"
+            f"Candidate profile:\n{profile[:12000]}\n\nPublic listing:\n{listing.model_dump_json()}"
         ),
         text_format=Draft,
         store=False,

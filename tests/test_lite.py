@@ -68,8 +68,9 @@ def test_merge_and_keyword_filter() -> None:
         url="https://example.org/job",
         source="a",
     )
-    newer = old.model_copy(update={"source": "b"})
+    newer = old.model_copy(update={"source": "b", "posted_on": date(2026, 10, 24)})
     assert merge([old], [newer]) == [newer]
+    assert merge([old], [newer])[0].posted_on == date(2026, 10, 24)
     assert filter_items([newer], ["engineer"]) == [newer]
     assert filter_items([newer], ["designer"]) == []
 
@@ -81,9 +82,7 @@ def test_send_requires_explicit_confirmation_and_blocks_duplicate() -> None:
         short_message="Could we talk?",
         listing_url="https://example.org/job",
     )
-    request = SendRequest(
-        draft_id="0123456789abcdef", recipient="team@example.org", confirmed=True
-    )
+    request = SendRequest(draft_id="0123456789abcdef", recipient="team@example.org", confirmed=True)
     message = prepare_email(request, draft, "me@example.org", already_sent=False)
     assert message["To"] == "team@example.org"
     with pytest.raises(ValueError, match="already sent"):

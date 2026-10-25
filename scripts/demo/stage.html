@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Intern Agent — walkthrough recording</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1018;color:#edf3ff;font:20px 'DejaVu Sans',sans-serif;width:1440px;height:900px;overflow:hidden}
+.glow{position:absolute;width:800px;height:800px;right:-200px;top:-350px;background:radial-gradient(circle,#183b43aa,transparent 66%);pointer-events:none}
+header{height:70px;margin:0 65px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #273342}
+.brand{font-size:24px;font-weight:700;letter-spacing:-1px}.mark{display:inline-grid;place-items:center;width:40px;height:40px;border:1px solid #74e6bc;border-radius:12px;margin-right:12px;color:#74e6bc}
+.badge{color:#a4b3c4;font-size:14px;letter-spacing:1.5px;text-transform:uppercase}.badge b{color:#74e6bc;font-weight:400}
+main{position:relative;margin:18px 65px 0}.eyebrow{font-size:14px;color:#74e6bc;letter-spacing:3px;text-transform:uppercase;margin-bottom:12px}
+h1{font-size:34px;letter-spacing:-1.7px;line-height:1.15;margin:0 0 14px;font-weight:700}.sub{color:#a4b3c4;margin:0;font-size:18px;line-height:1.6}
+#work{margin-top:18px;border:1px solid #304052;border-radius:15px;overflow:hidden;background:#101722;box-shadow:0 24px 70px #0005;height:624px}
+.chrome{height:43px;background:#172130;display:flex;align-items:center;gap:7px;padding:0 18px;color:#8194aa;font-size:13px;letter-spacing:.5px}
+.dot{width:9px;height:9px;border-radius:50%;background:#3e526b}.dot:first-child{background:#77dfb4}.chrome span:last-child{margin-left:14px}
+#terminal{padding:30px 34px;font:19px/1.65 'DejaVu Sans Mono',monospace;white-space:pre-wrap;overflow:hidden;height:465px;color:#cad6e6}
+.prompt{color:#74e6bc}.cursor{display:inline-block;width:10px;height:21px;background:#74e6bc;vertical-align:middle;animation:blink 1s step-end infinite}@keyframes blink{50%{opacity:0}}
+#browser{display:none;width:100%;height:580px;border:0;background:white}
+#hero{display:none;padding:36px 40px}#hero h2{font-size:52px;line-height:1.2;margin:0 0 22px;letter-spacing:-2px;max-width:900px}#hero h2 em{font-style:normal;color:#74e6bc}
+.tiles{display:flex;gap:18px;margin-top:30px}.tile{border:1px solid #314154;border-radius:10px;padding:20px;flex:1}.tile b{display:block;font-size:20px;margin-bottom:10px}.tile p{font-size:16px;color:#9dafc2;line-height:1.5;margin:0}
+footer{position:absolute;bottom:18px;left:65px;right:65px;display:flex;justify-content:space-between;color:#8ea2b9;font-size:15px}
+#steps{display:flex;gap:22px}#steps span.active{color:#74e6bc}.line{height:2px;position:absolute;bottom:0;left:0;background:#74e6bc;width:0;transition:width 1s}
+</style>
+<div class="glow"></div>
+<header><div class="brand"><span class="mark">↗</span>Intern Agent</div><div class="badge">LITE EDITION <b> / </b> JOBS + OPPORTUNITIES</div></header>
+<main><div id="eyebrow" class="eyebrow"></div><h1 id="title"></h1><p id="subtitle" class="sub"></p>
+<div id="work"><div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span id="window-title">LOCAL TERMINAL</span></div><div id="terminal"></div><iframe id="browser" title="Actual Intern Agent web app"></iframe><div id="hero"></div></div></main>
+<footer><span>Recorded on a server · fictional listings &amp; fixture AI output · no email sent</span><div id="steps"><span>01 Setup</span><span>02 Search</span><span>03 Draft</span><span>04 Review</span></div></footer><div id="progress" class="line"></div>
+<script>
+window.chapter=(label,title,subtitle,index)=>{document.querySelector('#eyebrow').textContent=label;document.querySelector('#title').textContent=title;document.querySelector('#subtitle').textContent=subtitle;document.querySelectorAll('#steps span').forEach((s,i)=>s.classList.toggle('active',i===index));document.querySelector('#progress').style.width=((index+1)*25)+'%'};
+window.mode=(name)=>{for(const id of ['terminal','browser','hero'])document.getElementById(id).style.display=id===name?'block':'none';document.querySelector('#window-title').textContent=name==='browser'?'127.0.0.1 · ACTUAL APP':'LOCAL TERMINAL'};
+window.command=(text)=>{const terminal=document.getElementById('terminal');terminal.innerHTML='';const prompt=document.createElement('span');prompt.className='prompt';prompt.textContent='$ ';const typed=document.createElement('span');typed.id='typed';typed.textContent=text;terminal.append(prompt,typed)};
+window.output=(text)=>{const el=document.createElement('div');el.style.marginTop='18px';el.textContent=text;document.querySelector('#terminal').append(el)};
+</script>
+</html>

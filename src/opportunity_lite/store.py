@@ -30,11 +30,7 @@ def filter_items(items: list[Listing], keywords: list[str]) -> list[Listing]:
     terms = [word.strip().casefold() for word in keywords if word.strip()]
     if not terms:
         return items
-    return [
-        item
-        for item in items
-        if any(term in searchable_text(item) for term in terms)
-    ]
+    return [item for item in items if any(term in searchable_text(item) for term in terms)]
 
 
 def searchable_text(item: Listing) -> str:
