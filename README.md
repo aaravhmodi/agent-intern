@@ -16,7 +16,7 @@ A local web app that collects open roles from community internship lists, compan
 
 [![Intern Agent browser walkthrough](docs/media/demo.gif)](docs/media/walkthrough.mp4)
 
-[Watch the video and reproduce it](docs/WALKTHROUGH.md). Recorded with fictional feeds and AI responses; no email is sent.
+[Watch the walkthrough](docs/WALKTHROUGH.md). Recorded with fictional feeds and AI responses; no email is sent.
 
 ---
 
